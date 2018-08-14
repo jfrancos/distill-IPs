@@ -17,8 +17,6 @@ def get_reader(file_name):
 for file_name in file_names:
 	# Remove null bytes for corruption in some files e.g. 2018-08-08
 	file_data = get_reader(file_name)
-	#print (file_data)
-	#csv.reader(x.replace('\0', '') for x in open(file_name))
 	n_set = set()
 
 	for IP in [row[1] for row in file_data if ip_regex.match(row[1]) and row[14] == 'N']:
