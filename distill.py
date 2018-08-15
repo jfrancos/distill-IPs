@@ -8,9 +8,8 @@ import sys
 
 ip_regex = re.compile('\d{1,3}\.' + sys.argv[1] + '\.\d{1,3}\.\d{1,3}')
 file_names = sorted((glob("../*-active_IPs.csv")))
-n_sets = []
 y_set = set()
-current_set = set()
+#current_set = set()
 n_dictionary = {}
 
 def get_reader(file_name):
@@ -19,18 +18,13 @@ def get_reader(file_name):
 
 for file_name in file_names:
 	file_data = get_reader(file_name)
-	n_dictionary[file_name] = [row[1] for row in file_data if ip_regex.match(row[1]) and row[14] == 'N']
+	n_dictionary[file_name] = set(row[1] for row in file_data if ip_regex.match(row[1]) and row[14] == 'N')
 
-for file_name in file_names:
-	n_set = set()
-	for IP in n_dictionary[file_name]:
-		n_set.add(IP)
-	n_sets.append(n_set)
+not_checked_in_IPs = set.intersection(*n_dictionary.values())
 
-not_checked_in_IPs = set.intersection(*n_sets)
-
-for IP in n_dictionary[file_names[-1]]:
-	current_set.add(IP)
+#for IP in n_dictionary[file_names[-1]]:
+	#current_set.add(IP)
+current_set = n_dictionary[file_names[-1]]
 
 ghost_ips = current_set - not_checked_in_IPs
 print (len(ghost_ips))
