@@ -20,7 +20,6 @@ def get_reader(file_name):
 
 print ("\nProcessing {}".format(file_names[-1]))
 
-
 for file_name in file_names:
 	file_data = get_reader(file_name)
 	n_dictionary[file_name] = set(row[1] for row in file_data if ip_regex.match(row[1]) and row[14] == 'N')
@@ -33,17 +32,17 @@ file_data = get_reader(file_names[-1])
 for row in file_data:
 	hostname_dict[row[1]] = row[2]
 
+# -sn means it's only a ping scan, not a port scan
 nm = nmap.PortScanner()
 nm.scan(hosts=' '.join(not_checked_in_IPs), arguments='-sn -n')
 hosts_list = [(x, nm[x]['status']) for x in nm.all_hosts()]
 
 unpingable_IPs = not_checked_in_IPs - set(nm.all_hosts())
 
-
 print ("\nRemoving {} down hosts: {}".format(len(unpingable_IPs), ', '.join(["{} ({})".format(ip, hostname_dict[ip]) for ip in unpingable_IPs])))
 
 file_data = get_reader(file_names[-1])
-writer = csv.writer(open(output_filename, 'w'))
+writer = csv.writer(open(output_filename, 'w'), quoting=csv.QUOTE_ALL)
 new_rows = []
 for row in file_data:
 	#if row[1] in not_checked_in_IPs and row[6] != 'CABLETRON':
@@ -51,8 +50,6 @@ for row in file_data:
 		new_rows += [[row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[11], row[12], row[13]]]
 sorted_new_rows = sorted(new_rows, key=lambda row: row[1])
 writer.writerows((sorted_new_rows))
-
-
 
 print ("\nRemoving {} hosts for which there was a prior active_IPs list that didn't include it:".format(len(ghost_ips)))
 
