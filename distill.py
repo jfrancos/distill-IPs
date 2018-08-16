@@ -24,9 +24,17 @@ not_checked_in_IPs = set.intersection(*n_dictionary.values())
 current_set = n_dictionary[file_names[-1]]
 ghost_ips = current_set - not_checked_in_IPs
 
-print (len(ghost_ips))
-
 file_data = get_reader(file_names[-1])
+
+writer = csv.writer(open('current_distilled.csv', 'w'))
+new_rows = []
+for row in file_data:
+	if row[1] in not_checked_in_IPs and row[6] != 'CABLETRON':
+		new_rows += [[row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[11], row[12], row[13]]]
+sorted_new_rows = sorted(new_rows, key=lambda row: row[1])
+writer.writerows((sorted_new_rows))
+file_data = get_reader(file_names[-1])
+
 for row in file_data:
 	hostname_dict[row[1]] = row[2]
 
@@ -36,6 +44,4 @@ for ip in ghost_ips:
 		file_data = get_reader(file_name)
 		if ip not in n_dictionary[file_name]:
 			missing.append(file_name)
-	print ("{} ({}) is missing from '{}' and {} others".format(ip, hostname_dict[ip], missing[0], len(missing) - 1 ))
-
-print (len(not_checked_in_IPs))
+	print ("{} ({}) is missing from '{}' and {} others".format(ip, hostname_dict[ip], missing[0][3:], len(missing) - 1 ))
