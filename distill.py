@@ -2,6 +2,7 @@
 
 import csv
 from glob import glob
+import nmap
 import re
 import sys
 import time
@@ -25,18 +26,28 @@ current_set = n_dictionary[file_names[-1]]
 ghost_ips = current_set - not_checked_in_IPs
 
 file_data = get_reader(file_names[-1])
+for row in file_data:
+	hostname_dict[row[1]] = row[2]
 
+nm = nmap.PortScanner()
+nm.scan(hosts=' '.join(not_checked_in_IPs), arguments='-sn -n')
+hosts_list = [(x, nm[x]['status']) for x in nm.all_hosts()]
+
+unpingable_IPs = not_checked_in_IPs - set(nm.all_hosts())
+
+print ("Removing {} down hosts: {}".format(len(unpingable_IPs), ', '.join(["{} ({})".format(ip, hostname_dict[ip]) for ip in unpingable_IPs])))
+
+file_data = get_reader(file_names[-1])
 writer = csv.writer(open('current_distilled.csv', 'w'))
 new_rows = []
 for row in file_data:
-	if row[1] in not_checked_in_IPs and row[6] != 'CABLETRON':
+	#if row[1] in not_checked_in_IPs and row[6] != 'CABLETRON':
+	if row[1] in nm.all_hosts() and row[6] != 'CABLETRON':
 		new_rows += [[row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[11], row[12], row[13]]]
 sorted_new_rows = sorted(new_rows, key=lambda row: row[1])
 writer.writerows((sorted_new_rows))
-file_data = get_reader(file_names[-1])
 
-for row in file_data:
-	hostname_dict[row[1]] = row[2]
+
 
 for ip in ghost_ips:
 	missing = []
