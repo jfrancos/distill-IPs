@@ -38,8 +38,6 @@ for file_name in file_names:
 	n_dictionary[file_name] = set(row['Address'] for row in file_data if ip_regex.match(row['Address']) and row['DHCP Check-in'] == 'N')
 	y_set |= set([row['Address'] for row in file_data if ip_regex.match(row['Address']) and row['DHCP Check-in'] == 'Y'])
 
-print (len(y_set))
-
 never_checked_in_IPs = set.intersection(*n_dictionary.values())
 current_set = n_dictionary[file_names[-1]]
 ghost_ips = current_set - never_checked_in_IPs
