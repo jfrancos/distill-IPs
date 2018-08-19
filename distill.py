@@ -17,9 +17,12 @@ output_filename = 'active_IPs-{}.csv'.format(sys.argv[1])
 
 def get_reader(file_name):
 	# Remove null bytes for corruption in some files e.g. 2018-08-08
-	reader = csv.reader(x.replace('\0', '') for x in open(file_name))
-	any (subnet_regex.match(e[0]) for e in reader)
-	return csv.DictReader((x.replace('\0', '') for x in open(file_name)), next(reader))
+	file = (x.replace('\0','') for x in open(file_name))
+	next(file)
+	reader = csv.DictReader(file)
+	any (subnet_regex.match(list(e.values())[0]) for e in reader)
+	reader.fieldnames = list(next(reader).values())
+	return reader
 
 print ("\nCurrent file: {}".format(file_names[-1]))
 print('Processing {} past files.'.format(len(file_names) - 1), end='', flush=True)
