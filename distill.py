@@ -18,9 +18,12 @@ output_filename = 'active_IPs-{}.csv'.format(sys.argv[1])
 def get_reader(file_name):
 	# Remove null bytes for corruption in some files e.g. 2018-08-08
 	file = (x.replace('\0','') for x in open(file_name))
+	# Skip first line so first line has correct number of column headers
 	next(file)
 	reader = csv.DictReader(file)
+	# Find beginning of specified subnet
 	any (subnet_regex.match(list(e.values())[0]) for e in reader)
+	# Update column headers - don't want to assume they are the same as top of file
 	reader.fieldnames = list(next(reader).values())
 	return reader
 
@@ -33,9 +36,9 @@ for file_name in file_names:
 	file_data = get_reader(file_name)
 	n_dictionary[file_name] = set(row['Address'] for row in file_data if ip_regex.match(row['Address']) and row['DHCP Check-in'] == 'N')
 
-not_checked_in_IPs = set.intersection(*n_dictionary.values())
+never_checked_in_IPs = set.intersection(*n_dictionary.values())
 current_set = n_dictionary[file_names[-1]]
-ghost_ips = current_set - not_checked_in_IPs
+ghost_ips = current_set - never_checked_in_IPs
 
 file_data = list(get_reader(file_names[-1]))
 for row in file_data:
@@ -43,10 +46,10 @@ for row in file_data:
 
 # -sn means it's only a ping scan, not a port scan
 nm = nmap.PortScanner()
-nm.scan(hosts=' '.join(not_checked_in_IPs), arguments='-sn -n')
+nm.scan(hosts=' '.join(never_checked_in_IPs), arguments='-sn -n')
 hosts_list = [(x, nm[x]['status']) for x in nm.all_hosts()]
 
-unpingable_IPs = not_checked_in_IPs - set(nm.all_hosts())
+unpingable_IPs = never_checked_in_IPs - set(nm.all_hosts())
 
 print ("\nRemoving {} down hosts: {}".format(len(unpingable_IPs), ', '.join(["{} ({})".format(ip, hostname_dict[ip]) for ip in unpingable_IPs])))
 
@@ -54,7 +57,7 @@ print ("\nRemoving {} down hosts: {}".format(len(unpingable_IPs), ', '.join(["{}
 writer = csv.writer(open(output_filename, 'w'), quoting=csv.QUOTE_ALL)
 new_rows = []
 for row in file_data:
-	#if row[1] in not_checked_in_IPs and row[6] != 'CABLETRON':
+	#if row[1] in never_checked_in_IPs and row[6] != 'CABLETRON':
 	if row['Address'] in nm.all_hosts() and row['Vendor'] != 'CABLETRON':
 		new_rows += [list(row.values())[1:-4]]
 		#new_rows += [[row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[11], row[12], row[13]]]
