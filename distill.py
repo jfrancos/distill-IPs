@@ -39,30 +39,36 @@ for file_name in file_names:
 never_checked_in_IPs = set.intersection(*n_dictionary.values())
 current_set = n_dictionary[file_names[-1]]
 ghost_ips = current_set - never_checked_in_IPs
+current_file_data = list(get_reader(file_names[-1]))
+current_IPs = [row['Address'] for row in current_file_data if ip_regex.match(row['Address']) and row['DHCP Check-in'] == 'N']
 
-file_data = list(get_reader(file_names[-1]))
-for row in file_data:
+for row in current_file_data:
 	hostname_dict[row['Address']] = row['Hostname']
 
 # -sn means it's only a ping scan, not a port scan
 nm = nmap.PortScanner()
-nm.scan(hosts=' '.join(never_checked_in_IPs), arguments='-sn -n')
+nm.scan(hosts=' '.join(current_IPs), arguments='-sn -n')
 hosts_list = [(x, nm[x]['status']) for x in nm.all_hosts()]
 
-unpingable_IPs = never_checked_in_IPs - set(nm.all_hosts())
-
+unpingable_IPs = set(current_IPs) - set(nm.all_hosts())
+print (len(current_IPs))
 print ("\nRemoving {} down hosts: {}".format(len(unpingable_IPs), ', '.join(["{} ({})".format(ip, hostname_dict[ip]) for ip in unpingable_IPs])))
 
 #file_data = get_reader(file_names[-1])
 writer = csv.writer(open(output_filename, 'w'), quoting=csv.QUOTE_ALL)
-new_rows = []
-for row in file_data:
+triage0_rows = []
+triage1_rows = []
+for row in [row for row in current_file_data if row['Address'] in current_IPs]:
 	#if row[1] in never_checked_in_IPs and row[6] != 'CABLETRON':
-	if row['Address'] in nm.all_hosts() and row['Vendor'] != 'CABLETRON':
-		new_rows += [list(row.values())[1:-4]]
-		#new_rows += [[row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[11], row[12], row[13]]]
-sorted_new_rows = sorted(new_rows, key=lambda row: row[1])
-writer.writerows((sorted_new_rows))
+	if row['Address'] not in unpingable_IPs and row['Address'] in never_checked_in_IPs and row['Vendor'] != 'CABLETRON':
+		triage0_rows += [list(row.values())[1:-4] + ['Host up', 'Never checked in'] ]
+	elif row['Vendor'] != 'CABLETRON':
+		up = 'Host down' if row['Address'] in unpingable_IPs else 'Host up'
+		checked = 'Never checked in' if row['Address'] in never_checked_in_IPs else 'May have checked in'
+		triage1_rows += [list(row.values())[1:-4] + [up, checked] ]
+sorted_triage0_rows = sorted(triage0_rows, key=lambda row: row[1])
+sorted_triage1_rows = sorted(triage1_rows, key=lambda row: row[1])
+writer.writerows(sorted_triage0_rows + sorted_triage1_rows)
 
 print ("\nRemoving {} hosts for which there was a prior active_IPs list that didn't include it:".format(len(ghost_ips)))
 
