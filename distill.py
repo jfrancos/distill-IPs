@@ -10,11 +10,12 @@ import time
 ip_regex = re.compile('\d{1,3}\.' + sys.argv[1] + '\.\d{1,3}\.\d{1,3}')
 subnet_regex = re.compile('18.' + sys.argv[1])
 file_names = sorted((glob("../*-active_IPs.csv")))
+current_file_name = file_names[-1]
 y_set = set()
 n_dictionary = {}
+n_files = {}
 hostname_dict = {}
 output_filename = 'active_IPs-{}.csv'.format(sys.argv[1])
-
 
 def get_reader(file_name):
 	# Remove null bytes for corruption in some files e.g. 2018-08-08
@@ -26,50 +27,50 @@ def get_reader(file_name):
 	any (subnet_regex.match(list(e.values())[0]) for e in reader)
 	# Update column headers - don't want to assume they are the same as top of file
 	reader.fieldnames = list(next(reader).values())
-	return reader
+	# Create list of relevant dicts
+	dict_list = [row for row in reader if 
+		ip_regex.match(row['Address']) and
+		row['Vendor'] != 'CABLETRON' and
+		not row['Hostname'].startswith('AV-')]
+	return dict_list
 
-print ("\nCurrent file: {}".format(file_names[-1]))
 print('Processing {} past files.'.format(len(file_names) - 1), end='', flush=True)
 
 # Creates a { filename -> set-of-ips dictionary, ... }, where all ips in the dictionaries match argv[1] and have 'N' for DHCP check-in
 for file_name in file_names:
 	print('.', end='', flush=True)
-	file_data = list(get_reader(file_name))
-	n_dictionary[file_name] = set(row['Address'] for row in file_data if ip_regex.match(row['Address']) and row['DHCP Check-in'] == 'N')
-	y_set |= set([row['Address'] for row in file_data if ip_regex.match(row['Address']) and row['DHCP Check-in'] == 'Y'])
+	file_data = get_reader(file_name)
+	n_files[file_name] = [row for row in file_data if row['DHCP Check-in'] == 'N']
+	n_dictionary[file_name] = set(row['Address'] for row in n_files[file_name])
+	y_set |= set([row['Address'] for row in file_data if row['DHCP Check-in'] == 'Y'])
 
 never_checked_in_IPs = set.intersection(*n_dictionary.values())
 current_set = n_dictionary[file_names[-1]]
 ghost_ips = current_set - never_checked_in_IPs
-current_file_data = list(get_reader(file_names[-1]))
-current_IPs = [row['Address'] for row in current_file_data if ip_regex.match(row['Address']) and row['DHCP Check-in'] == 'N']
+current_file_data = n_files[file_names[-1]]
+
+print ('\nCurrent file: {} has {} rows'.format(file_names[-1], len(current_set)))
 
 for row in current_file_data:
 	hostname_dict[row['Address']] = row['Hostname']
 
 # -sn means it's only a ping scan, not a port scan
 nm = nmap.PortScanner()
-nm.scan(hosts=' '.join(current_IPs), arguments='-sn -n')
-hosts_list = [(x, nm[x]['status']) for x in nm.all_hosts()]
+nm.scan(hosts=' '.join(current_set), arguments='-sn -n')
+pingable_IPs = set(nm.all_hosts())
 
-unpingable_IPs = set(current_IPs) - set(nm.all_hosts())
-print (len(current_IPs))
-print ("\nRemoving {} down hosts: {}".format(len(unpingable_IPs), ', '.join(["{} ({})".format(ip, hostname_dict[ip]) for ip in unpingable_IPs])))
-
-#file_data = get_reader(file_names[-1])
 writer = csv.writer(open(output_filename, 'w'), quoting=csv.QUOTE_ALL)
 triage0_rows = []
 triage1_rows = []
 triage2_rows = []
-for row in [row for row in current_file_data if row['Address'] in current_IPs and row['Vendor'] != 'CABLETRON']:
-	#if row[1] in never_checked_in_IPs and row[6] != 'CABLETRON':
-	if row['Address'] not in unpingable_IPs and row['Address'] in never_checked_in_IPs:
+for row in current_file_data:
+	if row['Address'] in pingable_IPs and row['Address'] in never_checked_in_IPs:
 		triage0_rows += [list(row.values())[1:-4] + ['Host up', 'Never checked in'] ]
 	elif row['Address'] in y_set:
-		up = 'Host down' if row['Address'] in unpingable_IPs else 'Host up'
+		up = 'Host down' if row['Address'] not in pingable_IPs else 'Host up'
 		triage2_rows += [list(row.values())[1:-4] + [up, 'Has checked in'] ]
 	else:
-		up = 'Host down' if row['Address'] in unpingable_IPs else 'Host up'
+		up = 'Host down' if row['Address'] not in pingable_IPs else 'Host up'
 		checked = 'Never checked in' if row['Address'] in never_checked_in_IPs else 'May have checked in'
 		triage1_rows += [list(row.values())[1:-4] + [up, checked] ]
 sorted_triage0_rows = sorted(triage0_rows, key=lambda row: row[1])
