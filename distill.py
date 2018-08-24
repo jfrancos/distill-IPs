@@ -16,6 +16,7 @@ n_dictionary = {}
 n_files = {}
 hostname_dict = {}
 output_filename = 'active_IPs-{}.csv'.format(sys.argv[1])
+triage = [[], [], [], [], [], []]
 
 def get_reader(file_name):
 	# Remove null bytes for corruption in some files e.g. 2018-08-08
@@ -59,24 +60,27 @@ nm = nmap.PortScanner()
 nm.scan(hosts=' '.join(current_set), arguments='-sn -n')
 pingable_IPs = set(nm.all_hosts())
 
-writer = csv.writer(open(output_filename, 'w'), quoting=csv.QUOTE_ALL)
-triage0_rows = []
-triage1_rows = []
-triage2_rows = []
+def add_row_to_list (row, level):
+	up = 'Host down' if address not in pingable_IPs else 'Host up'
+	checked = 'Never checked in' if address in never_checked_in_IPs else 'Has checked in' if address in y_set else 'May have checked in'
+	triage[level] += [list(row.values())[1:-4] + [up, checked] ]
+
 for row in current_file_data:
-	if row['Address'] in pingable_IPs and row['Address'] in never_checked_in_IPs:
-		triage0_rows += [list(row.values())[1:-4] + ['Host up', 'Never checked in'] ]
-	elif row['Address'] in y_set:
-		up = 'Host down' if row['Address'] not in pingable_IPs else 'Host up'
-		triage2_rows += [list(row.values())[1:-4] + [up, 'Has checked in'] ]
+	address = row['Address']
+	pingable = 0 if address in pingable_IPs else 3
+	if address in never_checked_in_IPs:
+		add_row_to_list(row, 0 + pingable)
+	elif address not in y_set:
+		add_row_to_list(row, 1 + pingable)
 	else:
-		up = 'Host down' if row['Address'] not in pingable_IPs else 'Host up'
-		checked = 'Never checked in' if row['Address'] in never_checked_in_IPs else 'May have checked in'
-		triage1_rows += [list(row.values())[1:-4] + [up, checked] ]
-sorted_triage0_rows = sorted(triage0_rows, key=lambda row: row[1])
-sorted_triage1_rows = sorted(triage1_rows, key=lambda row: row[1])
-sorted_triage2_rows = sorted(triage2_rows, key=lambda row: row[1])
-writer.writerows(sorted_triage0_rows + sorted_triage1_rows + sorted_triage2_rows)
+		add_row_to_list(row, 2 + pingable)
+
+for level in triage:
+	level.sort(key=lambda row: row[1])
+
+rows = [item for sublist in triage for item in sublist]
+writer = csv.writer(open(output_filename, 'w'), quoting=csv.QUOTE_ALL)
+writer.writerows(rows)
 
 print ("\nRemoving {} hosts for which there was a prior active_IPs list that didn't include it:".format(len(ghost_ips)))
 
