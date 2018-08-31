@@ -2,10 +2,15 @@
 
 import csv
 from glob import glob
+import json
 import nmap
+import os
 import re
 import sys
 import time
+
+if os.geteuid() != 0:
+	exit("You need to have root privileges to run this script.\nPlease try again, this time using 'sudo'. Exiting.")
 
 ip_regex = re.compile('\d{1,3}\.' + sys.argv[1] + '\.\d{1,3}\.\d{1,3}')
 subnet_regex = re.compile('18.' + sys.argv[1])
@@ -14,9 +19,20 @@ current_file_name = file_names[-1]
 y_set = set()
 n_dictionary = {}
 n_files = {}
-hostname_dict = {}
 output_filename = 'active_IPs-{}.csv'.format(sys.argv[1])
 triage = [[], [], [], [], [], []]
+
+hostname_dict = {}
+os_dict = {}
+web_interface_dict = {}
+
+with open ('nmap_cache.json') as nmap_cache_file:
+	try:
+		nmap_cache = json.loads(nmap_cache_file.read())
+	except ValueError:
+		nmap_cache = {}
+
+print ("nmap_cache = {}".format(nmap_cache))
 
 def get_reader(file_name):
 	# Remove null bytes for corruption in some files e.g. 2018-08-08
@@ -56,14 +72,48 @@ for row in current_file_data:
 	hostname_dict[row['Address']] = row['Hostname']
 
 # -sn means it's only a ping scan, not a port scan
-nm = nmap.PortScanner()
-nm.scan(hosts=' '.join(current_set), arguments='-sn -n')
-pingable_IPs = set(nm.all_hosts())
+nm1 = nmap.PortScanner()
+#print (dir(nm1))
+#print (nm1.nmap_version())
+nm1.scan(hosts=' '.join(current_set), arguments='-sn -n')
+pingable_IPs = set(nm1.all_hosts())
+
+print ('Scanning {} hosts'.format(len(pingable_IPs)))
+nm2 = nmap.PortScannerAsync()
+nmap_tally = 0
+
+def callback(host, scan_result):
+	global nmap_tally, nmap_cache, os_dict, web_interface_dict
+	nmap_tally += 1
+	print ('\r{}/{}'.format(nmap_tally, len(pingable_IPs)), end='', flush=True)
+	scan = scan_result.get('scan')
+	host_info = scan.get(host)
+	print (host_info)
+	match = host_info.get('osmatch')
+	if match:
+		os_dict[host] = match[0]['name']
+		nmap_cache[host] = match[0]['name']
+		with open ('nmap_cache.json', 'w') as nmap_cache_file:
+			json.dump(nmap_cache, nmap_cache_file)
+	tcp = scan_result['scan'][host].get('tcp')
+	if tcp and 80 in tcp.keys():
+		web_interface_dict[host] = True
+	else:
+		web_interface_dict[host] = False
+
+hosts_to_scan = pingable_IPs - set(nmap_cache.keys())
+print (' '.join(pingable_IPs - set(nmap_cache.keys())))
+nm2.scan(hosts=' '.join(pingable_IPs - set(nmap_cache.keys())), arguments='-O -n', callback=callback)
+
+while nm2.still_scanning():
+	print('.', end='', flush=True)
+	nm2.wait(2)
 
 def add_row_to_list (row, level):
+	address = row['Address']
 	up = 'Host down' if address not in pingable_IPs else 'Host up'
 	checked = 'Never checked in' if address in never_checked_in_IPs else 'Has checked in' if address in y_set else 'May have checked in'
-	triage[level] += [list(row.values())[1:-4] + [up, checked] ]
+	triage[level] += [list(row.values())[1:-4] + [up, checked, nmap_cache.get(address,'')] ]
 
 for row in current_file_data:
 	address = row['Address']
@@ -89,6 +139,6 @@ for ip in ghost_ips:
 	for file_name in file_names:
 		if ip not in n_dictionary[file_name]:
 			missing.append(file_name)
+			#print (file_name)
 	print ("{} ({}) is missing from '{}' and {} others".format(ip, hostname_dict[ip], missing[0][3:], len(missing) - 1 ))
-
 print ("\nWrote {}".format(output_filename))
