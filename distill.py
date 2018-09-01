@@ -15,7 +15,6 @@ if os.geteuid() != 0:
 ip_regex = re.compile('\d{1,3}\.' + sys.argv[1] + '\.\d{1,3}\.\d{1,3}')
 subnet_regex = re.compile('18.' + sys.argv[1])
 file_names = sorted((glob("../*-active_IPs.csv")))
-current_file_name = file_names[-1]
 y_set = set()
 n_dictionary = {}
 n_files = {}
@@ -23,8 +22,21 @@ output_filename = 'active_IPs-{}.csv'.format(sys.argv[1])
 triage = [[], [], [], [], [], []]
 
 hostname_dict = {}
-os_dict = {}
 web_interface_dict = {}
+
+## Remove duplicate files
+last = ""
+duplicates = []
+for file_name in file_names:
+	with open(file_name) as raw_file:
+		file = raw_file.read()
+	if file == last:
+		duplicates.append(file_name)
+	last = file
+
+for file_name in duplicates:
+	file_names.remove(file_name)
+## ---------------------
 
 with open ('nmap_cache.json') as nmap_cache_file:
 	try:
@@ -32,7 +44,7 @@ with open ('nmap_cache.json') as nmap_cache_file:
 	except ValueError:
 		nmap_cache = {}
 
-print ("nmap_cache = {}".format(nmap_cache))
+print ("nmap_cache has {} entries".format(len(nmap_cache)))
 
 def get_reader(file_name):
 	# Remove null bytes for corruption in some files e.g. 2018-08-08
@@ -51,7 +63,7 @@ def get_reader(file_name):
 		not row['Hostname'].startswith('AV-')]
 	return dict_list
 
-print('Processing {} past files.'.format(len(file_names) - 1), end='', flush=True)
+print('Processing {} unique files out of {} files.'.format(len(file_names), len(file_names) + len(duplicates)), end='', flush=True)
 
 # Creates a { filename -> set-of-ips dictionary, ... }, where all ips in the dictionaries match argv[1] and have 'N' for DHCP check-in
 for file_name in file_names:
@@ -73,8 +85,8 @@ for row in current_file_data:
 
 # -sn means it's only a ping scan, not a port scan
 nm1 = nmap.PortScanner()
-#print (dir(nm1))
-#print (nm1.nmap_version())
+version = nm1.nmap_version()
+print ("Using nmap {}.{}".format(version[0], version[1]))
 nm1.scan(hosts=' '.join(current_set), arguments='-sn -n')
 pingable_IPs = set(nm1.all_hosts())
 
@@ -83,7 +95,7 @@ nm2 = nmap.PortScannerAsync()
 nmap_tally = 0
 
 def callback(host, scan_result):
-	global nmap_tally, nmap_cache, os_dict, web_interface_dict
+	global nmap_tally, nmap_cache, web_interface_dict
 	nmap_tally += 1
 	print ('\r{}/{}'.format(nmap_tally, len(pingable_IPs)), end='', flush=True)
 	scan = scan_result.get('scan')
@@ -91,7 +103,6 @@ def callback(host, scan_result):
 	print (host_info)
 	match = host_info.get('osmatch')
 	if match:
-		os_dict[host] = match[0]['name']
 		nmap_cache[host] = match[0]['name']
 		with open ('nmap_cache.json', 'w') as nmap_cache_file:
 			json.dump(nmap_cache, nmap_cache_file)
