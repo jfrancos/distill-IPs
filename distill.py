@@ -49,17 +49,16 @@ print ("nmap_cache has {} entries".format(len(nmap_cache)))
 def get_reader(file_name):
 	# Remove null bytes for corruption in some files e.g. 2018-08-08
 	file = (x.replace('\0','') for x in open(file_name))
-	# Skip first line so first line has correct number of column headers
-	next(file)
+	# Skip until table for specified subnet
+	any (e.startswith('18.' + sys.argv[1]) for e in file)
 	reader = csv.DictReader(file)
-	# Find beginning of specified subnet
-	any (subnet_regex.match(list(e.values())[0]) for e in reader)
-	# Update column headers - don't want to assume they are the same as top of file
-	reader.fieldnames = list(next(reader).values())
 	# Create list of relevant dicts
 	dict_list = [row for row in reader if 
 		ip_regex.match(row['Address']) and
 		row['Vendor'] != 'CABLETRON' and
+		not row['Hostname'].startswith('CD-') and
+		not row['Contact'] == 'cdrennan@MIT.EDU' and
+		not row['Location'] == '68-171' and
 		not row['Hostname'].startswith('AV-')]
 	return dict_list
 
@@ -143,7 +142,7 @@ rows = [item for sublist in triage for item in sublist]
 writer = csv.writer(open(output_filename, 'w'), quoting=csv.QUOTE_ALL)
 writer.writerows(rows)
 
-print ("\nRemoving {} hosts for which there was a prior active_IPs list that didn't include it:".format(len(ghost_ips)))
+#print ("\nRemoving {} hosts for which there was a prior active_IPs list that didn't include it:".format(len(ghost_ips)))
 
 for ip in ghost_ips:
 	missing = []
