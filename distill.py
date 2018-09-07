@@ -31,26 +31,6 @@ triage = [[], [], [], [], [], []]
 hostname_dict = {}
 web_interface_dict = {}
 
-## Remove duplicate files
-last = None
-removed_files_tally = 0
-for file_name in list(file_names):  # list() because we're removing from file_names as we go
-	with open(file_name) as raw_file:
-		file = raw_file.read()
-	if file == last:
-		removed_files_tally += 1
-		file_names.remove(file_name)
-	last = file
-## ---------------------
-
-try:
-	with open (nmap_cache_filename) as nmap_cache_file:
-		nmap_cache = json.loads(nmap_cache_file.read())
-except (IOError, ValueError) as e:
-	nmap_cache = {}
-
-print ("nmap_cache has {} entries".format(len(nmap_cache)))
-
 def get_reader(file_name):
 	# Remove null bytes for corruption in some files e.g. 2018-08-08
 	file = (x.replace('\0','') for x in open(file_name))
@@ -67,6 +47,18 @@ def get_reader(file_name):
 		not row['Location'].startswith('68-588') and
 		not row['Hostname'].startswith('AV-')]
 	return dict_list
+
+## Remove duplicate files
+last = None
+removed_files_tally = 0
+for file_name in list(file_names):  # list() because we're removing from file_names as we go
+	with open(file_name) as raw_file:
+		file = raw_file.read()
+	if file == last:
+		removed_files_tally += 1
+		file_names.remove(file_name)
+	last = file
+## ---------------------
 
 print('Processing {} unique files out of {} files.'.format(len(file_names), len(file_names) + removed_files_tally), end='', flush=True)
 
@@ -90,14 +82,20 @@ for row in current_file_data:
 
 # -sn means it's only a ping scan, not a port scan
 nm1 = nmap.PortScanner()
-version = nm1.nmap_version()
-print ("Using nmap {}.{}".format(version[0], version[1]))
+print ("Using nmap {}".format('.'.join([str(number) for number in nm1.nmap_version()])))
 nm1.scan(hosts=' '.join(current_set), arguments='-sn -n')
 pingable_IPs = set(nm1.all_hosts())
 
-print ('Scanning {} hosts'.format(len(pingable_IPs)))
+print ('Scanning {} hosts for web servers'.format(len(pingable_IPs)))
 nm2 = nmap.PortScannerAsync()
 nmap_tally = 0
+
+options = webdriver.ChromeOptions()
+options.add_argument('headless')
+options.add_argument("--window-size=1224,490")
+desired_capabilities = {"acceptInsecureCerts": True}
+driver = webdriver.Chrome(chrome_options=options, desired_capabilities=desired_capabilities)
+png_names = multiprocessing.Manager().list()
 
 def callback(host, scan_result):
 	global nmap_tally, nmap_cache, web_interface_dict
@@ -111,11 +109,14 @@ def callback(host, scan_result):
 		nmap_cache[host] = match[0]['name']
 		with open (nmap_cache_filename, 'w') as nmap_cache_file:
 			json.dump(nmap_cache, nmap_cache_file)
-	tcp = scan_result['scan'][host].get('tcp')
-	if tcp and 80 in tcp.keys():
-		web_interface_dict[host] = True
-	else:
-		web_interface_dict[host] = False
+
+try:
+	with open (nmap_cache_filename) as nmap_cache_file:
+		nmap_cache = multiprocessing.Manager().dict(json.loads(nmap_cache_file.read()))
+except (IOError, ValueError) as e:
+	nmap_cache = multiprocessing.Manager().dict()
+
+print ("nmap_cache has {} entries".format(len(nmap_cache)))
 
 hosts_to_scan = pingable_IPs - set(nmap_cache.keys())
 print (' '.join(pingable_IPs - set(nmap_cache.keys())))
@@ -130,15 +131,6 @@ print (web_interface_dict)
 hosts_to_scan = pingable_IPs
 nm3 = nmap.PortScannerAsync()
 
-options = webdriver.ChromeOptions()
-options.add_argument('headless')
-#options.add_argument("--window-size=800,325")
-options.add_argument("--window-size=1224,490")
-
-desired_capabilities = {"acceptInsecureCerts": True}
-driver = webdriver.Chrome(chrome_options=options, desired_capabilities=desired_capabilities)
-#driver.implicitly_wait(2)
-png_names = multiprocessing.Manager().list()
 pdf = FPDF(format='letter')
 pdf.set_font('Arial','',10)
 
@@ -167,7 +159,6 @@ driver.quit()
 
 for i, name in enumerate(png_names):
 	if i % 3 == 0:
-		print ('resetting')
 		pdf.add_page()
 	else:
 		pdf.line(0, pdf.get_y(), 215, pdf.get_y())
