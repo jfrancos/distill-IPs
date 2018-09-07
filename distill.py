@@ -7,6 +7,7 @@ import nmap
 import os
 from fpdf import FPDF
 import multiprocessing
+import pprint
 import re
 import selenium.webdriver as webdriver
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
@@ -16,6 +17,7 @@ import time
 if os.geteuid() != 0:
 	exit("You need to have root privileges to run this script.\nPlease try again, this time using 'sudo'. Exiting.")
 
+pp = pprint.PrettyPrinter(indent=4)
 ip_regex = re.compile('\d{1,3}\.' + sys.argv[1] + '\.\d{1,3}\.\d{1,3}')
 subnet_regex = re.compile('18.' + sys.argv[1])
 file_names = sorted((glob("../*-active_IPs.csv")))
@@ -29,17 +31,15 @@ hostname_dict = {}
 web_interface_dict = {}
 
 ## Remove duplicate files
-last = ""
-duplicates = []
-for file_name in file_names:
+last = None
+removed_files_tally = 0
+for file_name in list(file_names):  # list() because we're removing from file_names as we go
 	with open(file_name) as raw_file:
 		file = raw_file.read()
 	if file == last:
-		duplicates.append(file_name)
+		removed_files_tally += 1
+		file_names.remove(file_name)
 	last = file
-
-for file_name in duplicates:
-	file_names.remove(file_name)
 ## ---------------------
 
 with open ('nmap_cache.json') as nmap_cache_file:
@@ -67,7 +67,7 @@ def get_reader(file_name):
 		not row['Hostname'].startswith('AV-')]
 	return dict_list
 
-print('Processing {} unique files out of {} files.'.format(len(file_names), len(file_names) + len(duplicates)), end='', flush=True)
+print('Processing {} unique files out of {} files.'.format(len(file_names), len(file_names) + removed_files_tally), end='', flush=True)
 
 # Creates a { filename -> set-of-ips dictionary, ... }, where all ips in the dictionaries match argv[1] and have 'N' for DHCP check-in
 for file_name in file_names:
