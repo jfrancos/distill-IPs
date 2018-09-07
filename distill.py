@@ -5,7 +5,11 @@ from glob import glob
 import json
 import nmap
 import os
+from fpdf import FPDF
+import multiprocessing
 import re
+import selenium.webdriver as webdriver
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 import sys
 import time
 
@@ -59,6 +63,7 @@ def get_reader(file_name):
 		not row['Hostname'].startswith('CD-') and
 		not row['Contact'] == 'cdrennan@MIT.EDU' and
 		not row['Location'] == '68-171' and
+		not row['Location'].startswith('68-588') and
 		not row['Hostname'].startswith('AV-')]
 	return dict_list
 
@@ -119,6 +124,59 @@ while nm2.still_scanning():
 	print('.', end='', flush=True)
 	nm2.wait(2)
 
+print (web_interface_dict)
+
+hosts_to_scan = pingable_IPs
+nm3 = nmap.PortScannerAsync()
+
+options = webdriver.ChromeOptions()
+options.add_argument('headless')
+#options.add_argument("--window-size=800,325")
+options.add_argument("--window-size=1224,490")
+
+desired_capabilities = {"acceptInsecureCerts": True}
+driver = webdriver.Chrome(chrome_options=options, desired_capabilities=desired_capabilities)
+#driver.implicitly_wait(2)
+png_names = multiprocessing.Manager().list()
+pdf = FPDF(format='letter')
+pdf.set_font('Arial','',10)
+
+def callback3(host, scan_result):
+	tcp = scan_result['scan'][host].get('tcp')
+	if tcp and 80 in tcp.keys() and tcp[80]['state'] == 'open':
+		print ("found webpage for {}".format(host))
+		driver.get('http://{}'.format(host))
+		try:
+			alert = driver.switch_to_alert()
+			alert.dismiss()
+		except Exception:
+			pass
+		#time.sleep(2)
+		png_name = '{}.png'.format(host)
+		driver.get_screenshot_as_file(png_name)
+		png_names.append(png_name)
+
+print (hosts_to_scan)
+nm3.scan(hosts=' '.join(hosts_to_scan), arguments='-n -Pn -p 80', callback=callback3)
+while nm3.still_scanning():
+	print('.', end='', flush=True)
+	nm3.wait(1)
+
+driver.quit()
+
+for i, name in enumerate(png_names):
+	if i % 3 == 0:
+		print ('resetting')
+		pdf.add_page()
+	else:
+		pdf.line(0, pdf.get_y(), 215, pdf.get_y())
+		pdf.set_y(pdf.get_y() + 3)
+	pdf.write(0, '{} / {}\n'.format(hostname_dict[name[:-4]], name[:-4]))
+	pdf.set_y(pdf.get_y() + 3)
+	pdf.image(name, w=195)
+
+pdf.output("pages.pdf", "F")
+
 def add_row_to_list (row, level):
 	address = row['Address']
 	up = 'Host down' if address not in pingable_IPs else 'Host up'
@@ -131,8 +189,10 @@ for row in current_file_data:
 	if address in never_checked_in_IPs:
 		add_row_to_list(row, 0 + pingable)
 	elif address not in y_set:
+		#pass
 		add_row_to_list(row, 1 + pingable)
 	else:
+		#pass
 		add_row_to_list(row, 2 + pingable)
 
 for level in triage:
