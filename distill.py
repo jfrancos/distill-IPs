@@ -18,6 +18,7 @@ if os.geteuid() != 0:
 	exit("You need to have root privileges to run this script.\nPlease try again, this time using 'sudo'. Exiting.")
 
 pp = pprint.PrettyPrinter(indent=4)
+nmap_cache_filename = 'nmap_cache.json'
 ip_regex = re.compile('\d{1,3}\.' + sys.argv[1] + '\.\d{1,3}\.\d{1,3}')
 subnet_regex = re.compile('18.' + sys.argv[1])
 file_names = sorted((glob("../*-active_IPs.csv")))
@@ -42,11 +43,11 @@ for file_name in list(file_names):  # list() because we're removing from file_na
 	last = file
 ## ---------------------
 
-with open ('nmap_cache.json') as nmap_cache_file:
-	try:
+try:
+	with open (nmap_cache_filename) as nmap_cache_file:
 		nmap_cache = json.loads(nmap_cache_file.read())
-	except ValueError:
-		nmap_cache = {}
+except (IOError, ValueError) as e:
+	nmap_cache = {}
 
 print ("nmap_cache has {} entries".format(len(nmap_cache)))
 
@@ -108,7 +109,7 @@ def callback(host, scan_result):
 	match = host_info.get('osmatch')
 	if match:
 		nmap_cache[host] = match[0]['name']
-		with open ('nmap_cache.json', 'w') as nmap_cache_file:
+		with open (nmap_cache_filename, 'w') as nmap_cache_file:
 			json.dump(nmap_cache, nmap_cache_file)
 	tcp = scan_result['scan'][host].get('tcp')
 	if tcp and 80 in tcp.keys():
