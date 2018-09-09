@@ -29,7 +29,6 @@ output_filename = 'active_IPs-{}.csv'.format(sys.argv[1])
 triage = [[], [], [], [], [], []]
 
 hostname_dict = {}
-web_interface_dict = {}
 
 def get_reader(file_name):
 	# Remove null bytes for corruption in some files e.g. 2018-08-08
@@ -98,7 +97,7 @@ driver = webdriver.Chrome(chrome_options=options, desired_capabilities=desired_c
 png_names = multiprocessing.Manager().list()
 
 def callback(host, scan_result):
-	global nmap_tally, nmap_cache, web_interface_dict
+	global nmap_tally
 	nmap_tally += 1
 	print ('\r{}/{}'.format(nmap_tally, len(pingable_IPs)), end='', flush=True)
 	scan = scan_result.get('scan')
@@ -108,7 +107,7 @@ def callback(host, scan_result):
 	if match:
 		nmap_cache[host] = match[0]['name']
 		with open (nmap_cache_filename, 'w') as nmap_cache_file:
-			json.dump(nmap_cache, nmap_cache_file)
+			json.dump(dict(nmap_cache), nmap_cache_file)
 
 try:
 	with open (nmap_cache_filename) as nmap_cache_file:
@@ -125,8 +124,6 @@ nm2.scan(hosts=' '.join(pingable_IPs - set(nmap_cache.keys())), arguments='-O -n
 while nm2.still_scanning():
 	print('.', end='', flush=True)
 	nm2.wait(2)
-
-print (web_interface_dict)
 
 hosts_to_scan = pingable_IPs
 nm3 = nmap.PortScannerAsync()
@@ -150,7 +147,9 @@ def callback3(host, scan_result):
 		png_names.append(png_name)
 
 print (hosts_to_scan)
+
 nm3.scan(hosts=' '.join(hosts_to_scan), arguments='-n -Pn -p 80', callback=callback3)
+
 while nm3.still_scanning():
 	print('.', end='', flush=True)
 	nm3.wait(1)
@@ -190,7 +189,8 @@ for row in current_file_data:
 for level in triage:
 	level.sort(key=lambda row: row[1])
 
-rows = [item for sublist in triage for item in sublist]
+
+rows = [[', '.join([name[3:13] for name in file_names])]] + [item for sublist in triage for item in sublist]
 writer = csv.writer(open(output_filename, 'w'), quoting=csv.QUOTE_ALL)
 writer.writerows(rows)
 
