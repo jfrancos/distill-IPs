@@ -108,7 +108,6 @@ def callback(host, scan_result):
 		nmap_cache[host] = match[0]['name']
 		with open (nmap_cache_filename, 'w') as nmap_cache_file:
 			json.dump(dict(nmap_cache), nmap_cache_file)
-
 try:
 	with open (nmap_cache_filename) as nmap_cache_file:
 		nmap_cache = multiprocessing.Manager().dict(json.loads(nmap_cache_file.read()))
@@ -117,62 +116,74 @@ except (IOError, ValueError) as e:
 
 print ("nmap_cache has {} entries".format(len(nmap_cache)))
 
-hosts_to_scan = pingable_IPs - set(nmap_cache.keys())
-print (' '.join(pingable_IPs - set(nmap_cache.keys())))
-nm2.scan(hosts=' '.join(pingable_IPs - set(nmap_cache.keys())), arguments='-O -n', callback=callback)
 
-while nm2.still_scanning():
-	print('.', end='', flush=True)
-	nm2.wait(2)
+if False:
+	hosts_to_scan = pingable_IPs - set(nmap_cache.keys())
+	print (' '.join(pingable_IPs - set(nmap_cache.keys())))
+	nm2.scan(hosts=' '.join(pingable_IPs - set(nmap_cache.keys())), arguments='-O -n', callback=callback)
 
-hosts_to_scan = pingable_IPs
-nm3 = nmap.PortScannerAsync()
+	while nm2.still_scanning():
+		print('.', end='', flush=True)
+		nm2.wait(2)
 
-pdf = FPDF(format='letter')
-pdf.set_font('Arial','',10)
+if False:
+	hosts_to_scan = pingable_IPs
+	nm3 = nmap.PortScannerAsync()
 
-def callback3(host, scan_result):
-	tcp = scan_result['scan'][host].get('tcp')
-	if tcp and 80 in tcp.keys() and tcp[80]['state'] == 'open':
-		print ("found webpage for {}".format(host))
-		driver.get('http://{}'.format(host))
-		try:
-			alert = driver.switch_to_alert()
-			alert.dismiss()
-		except Exception:
-			pass
-		#time.sleep(2)
-		png_name = '{}.png'.format(host)
-		driver.get_screenshot_as_file(png_name)
-		png_names.append(png_name)
+	pdf = FPDF(format='letter')
+	pdf.set_font('Arial','',10)
 
-print (hosts_to_scan)
+	def callback3(host, scan_result):
+		tcp = scan_result['scan'][host].get('tcp')
+		if tcp and 80 in tcp.keys() and tcp[80]['state'] == 'open':
+			print ("found webpage for {}".format(host))
+			driver.get('http://{}'.format(host))
+			try:
+				alert = driver.switch_to_alert()
+				alert.dismiss()
+			except Exception:
+				pass
+			#time.sleep(2)
+			png_name = '{}.png'.format(host)
+			driver.get_screenshot_as_file(png_name)
+			png_names.append(png_name)
 
-nm3.scan(hosts=' '.join(hosts_to_scan), arguments='-n -Pn -p 80', callback=callback3)
+	print (hosts_to_scan)
 
-while nm3.still_scanning():
-	print('.', end='', flush=True)
-	nm3.wait(1)
+	nm3.scan(hosts=' '.join(hosts_to_scan), arguments='-n -Pn -p 80', callback=callback3)
 
-driver.quit()
+	while nm3.still_scanning():
+		print('.', end='', flush=True)
+		nm3.wait(1)
 
-for i, name in enumerate(png_names):
-	if i % 3 == 0:
-		pdf.add_page()
-	else:
-		pdf.line(0, pdf.get_y(), 215, pdf.get_y())
+	driver.quit()
+
+	for i, name in enumerate(png_names):
+		if i % 3 == 0:
+			pdf.add_page()
+		else:
+			pdf.line(0, pdf.get_y(), 215, pdf.get_y())
+			pdf.set_y(pdf.get_y() + 3)
+		pdf.write(0, '{} / {}\n'.format(hostname_dict[name[:-4]], name[:-4]))
 		pdf.set_y(pdf.get_y() + 3)
-	pdf.write(0, '{} / {}\n'.format(hostname_dict[name[:-4]], name[:-4]))
-	pdf.set_y(pdf.get_y() + 3)
-	pdf.image(name, w=195)
+		pdf.image(name, w=195)
 
-pdf.output("pages.pdf", "F")
+	pdf.output("pages.pdf", "F")
+
+buildings = set([row['Network'] for row in current_file_data]) - set([''])
 
 def add_row_to_list (row, level):
-	address = row['Address']
 	up = 'Host down' if address not in pingable_IPs else 'Host up'
 	checked = 'Never checked in' if address in never_checked_in_IPs else 'Has checked in' if address in y_set else 'May have checked in'
-	triage[level] += [list(row.values())[1:-4] + [up, checked, nmap_cache.get(address,'')] ]
+	values = list(row.values())
+	initial_type = [' / '.join(values[6:8]) if values[6] and values[7] else ''.join(values[6:8]) ]
+	contact = [' / '.join(values[8:10]) if values[8] != values[9] else values[8]]
+	date = [values[10][:11]]
+	building = [] if len(buildings) == 1 else [values[4]]
+	triage[level] += [values[1:4] + building + values[5:6] + initial_type + contact + date + values[11:-4] + [up, checked, nmap_cache.get(row['Address'],'')] ]
+#	if row['Address'] in ghost_ips:
+#		triage[level] += ['', '', 'Missing from:']
+
 
 for row in current_file_data:
 	address = row['Address']
@@ -189,10 +200,23 @@ for row in current_file_data:
 for level in triage:
 	level.sort(key=lambda row: row[1])
 
+rows = [[' | '.join([name[3:13] for name in file_names])]] + [item for sublist in triage for item in sublist]
 
-rows = [[', '.join([name[3:13] for name in file_names])]] + [item for sublist in triage for item in sublist]
+final = []
+
+for row in rows:
+	final += [row]
+	if row[0] in ghost_ips:
+		missing = []
+		for file_name in file_names:
+			if row[0] not in n_dictionary[file_name]:
+				missing.append(file_name)
+		final += [['', '', 'Missing from: {}'.format(' | '.join([date[3:13] for date in missing]))]]
+
 writer = csv.writer(open(output_filename, 'w'), quoting=csv.QUOTE_ALL)
-writer.writerows(rows)
+#writer.writerows(rows)
+writer.writerows(final)
+
 
 #print ("\nRemoving {} hosts for which there was a prior active_IPs list that didn't include it:".format(len(ghost_ips)))
 
