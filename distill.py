@@ -25,6 +25,7 @@ file_names = sorted((glob("../*-active_IPs.csv")))
 y_set = set()
 n_dictionary = {}
 n_files = {}
+y_files = []
 output_filename = 'active_IPs-{}.csv'.format(sys.argv[1])
 triage = [[], [], [], [], [], []]
 
@@ -58,6 +59,12 @@ for file_name in list(file_names):  # list() because we're removing from file_na
 		file_names.remove(file_name)
 	last = file
 ## ---------------------
+
+## Figure out which files don't have 'Y' rows filtered out
+for file_name in file_names:
+	with open(file_name) as raw_file:
+		if any (line.endswith(',Y,\n') for line in raw_file):
+			y_files.append(file_name)
 
 print('Processing {} unique files out of {} files.'.format(len(file_names), len(file_names) + removed_files_tally), end='', flush=True)
 
@@ -116,8 +123,7 @@ except (IOError, ValueError) as e:
 
 print ("nmap_cache has {} entries".format(len(nmap_cache)))
 
-
-if False:
+if True:
 	hosts_to_scan = pingable_IPs - set(nmap_cache.keys())
 	print (' '.join(pingable_IPs - set(nmap_cache.keys())))
 	nm2.scan(hosts=' '.join(pingable_IPs - set(nmap_cache.keys())), arguments='-O -n', callback=callback)
@@ -126,7 +132,7 @@ if False:
 		print('.', end='', flush=True)
 		nm2.wait(2)
 
-if False:
+if True:
 	hosts_to_scan = pingable_IPs
 	nm3 = nmap.PortScannerAsync()
 
@@ -137,13 +143,16 @@ if False:
 		tcp = scan_result['scan'][host].get('tcp')
 		if tcp and 80 in tcp.keys() and tcp[80]['state'] == 'open':
 			print ("found webpage for {}".format(host))
-			driver.get('http://{}'.format(host))
+			driver.set_page_load_timeout(15)
+			try:
+				driver.get('http://{}'.format(host))
+			except Exception:
+				return
 			try:
 				alert = driver.switch_to_alert()
 				alert.dismiss()
 			except Exception:
 				pass
-			#time.sleep(2)
 			png_name = '{}.png'.format(host)
 			driver.get_screenshot_as_file(png_name)
 			png_names.append(png_name)
@@ -173,7 +182,7 @@ if False:
 buildings = set([row['Network'] for row in current_file_data]) - set([''])
 
 def add_row_to_list (row, level):
-	up = 'Host down' if address not in pingable_IPs else 'Host up'
+	up = 'Down' if address not in pingable_IPs else 'Up'
 	checked = 'Never checked in' if address in never_checked_in_IPs else 'Has checked in' if address in y_set else 'May have checked in'
 	values = list(row.values())
 	initial_type = [' / '.join(values[6:8]) if values[6] and values[7] else ''.join(values[6:8]) ]
@@ -181,9 +190,6 @@ def add_row_to_list (row, level):
 	date = [values[10][:11]]
 	building = [] if len(buildings) == 1 else [values[4]]
 	triage[level] += [values[1:4] + building + values[5:6] + initial_type + contact + date + values[11:-4] + [up, checked, nmap_cache.get(row['Address'],'')] ]
-#	if row['Address'] in ghost_ips:
-#		triage[level] += ['', '', 'Missing from:']
-
 
 for row in current_file_data:
 	address = row['Address']
@@ -200,31 +206,22 @@ for row in current_file_data:
 for level in triage:
 	level.sort(key=lambda row: row[1])
 
-rows = [[' | '.join([name[3:13] for name in file_names])]] + [item for sublist in triage for item in sublist]
+date_row = ' | '.join([name[3:13] + ('(Y)' if name in y_files else '') for name in file_names])
+last_space = -1 * list(reversed(date_row)).index(' ')
+
+rows = [[date_row[:last_space] + '[' + date_row[last_space:] + ']' ]] + [[]] + [item for sublist in triage for item in sublist]
 
 final = []
-
 for row in rows:
 	final += [row]
-	if row[0] in ghost_ips:
+	if row and row[0] in ghost_ips:
 		missing = []
 		for file_name in file_names:
 			if row[0] not in n_dictionary[file_name]:
 				missing.append(file_name)
-		final += [['', '', 'Missing from: {}'.format(' | '.join([date[3:13] for date in missing]))]]
+		final += [['^' * 9, '^' * 9, '\'N\'-line absent: {}'.format(' | '.join([date[3:13] for date in missing]))]]
 
 writer = csv.writer(open(output_filename, 'w'), quoting=csv.QUOTE_ALL)
-#writer.writerows(rows)
 writer.writerows(final)
 
-
-#print ("\nRemoving {} hosts for which there was a prior active_IPs list that didn't include it:".format(len(ghost_ips)))
-
-for ip in ghost_ips:
-	missing = []
-	for file_name in file_names:
-		if ip not in n_dictionary[file_name]:
-			missing.append(file_name)
-			#print (file_name)
-	print ("{} ({}) is missing from '{}' and {} others".format(ip, hostname_dict[ip], missing[0][3:], len(missing) - 1 ))
 print ("\nWrote {}".format(output_filename))
