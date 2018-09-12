@@ -23,11 +23,13 @@ ip_regex = re.compile('\d{1,3}\.' + sys.argv[1] + '\.\d{1,3}\.\d{1,3}')
 subnet_regex = re.compile('18.' + sys.argv[1])
 file_names = sorted((glob("../*-active_IPs.csv")))
 y_set = set()
+y_dict = {}
 n_dictionary = {}
 n_files = {}
 y_files = []
 output_filename = 'active_IPs-{}.csv'.format(sys.argv[1])
-triage = [[], [], [], [], [], []]
+#triage = [[], [], [], [], [], []]
+triage = [[], [], []]
 
 hostname_dict = {}
 
@@ -75,6 +77,8 @@ for file_name in file_names:
 	n_files[file_name] = [row for row in file_data if row['DHCP Check-in'] == 'N']
 	n_dictionary[file_name] = set(row['Address'] for row in n_files[file_name])
 	y_set |= set([row['Address'] for row in file_data if row['DHCP Check-in'] == 'Y'])
+	for row in [row for row in file_data if row['DHCP Check-in'] == 'Y']:
+		y_dict[row['Address']] = y_dict.get(row['Address'],[]) + [file_name[3:13]]
 
 never_checked_in_IPs = set.intersection(*n_dictionary.values())
 current_set = n_dictionary[file_names[-1]]
@@ -181,27 +185,47 @@ if True:
 
 buildings = set([row['Network'] for row in current_file_data]) - set([''])
 
+with open('oui.csv') as mac_company_csv:
+	mac_companies = list(csv.DictReader(mac_company_csv))
+
 def add_row_to_list (row, level):
 	up = 'Down' if address not in pingable_IPs else 'Up'
-	checked = 'Never checked in' if address in never_checked_in_IPs else 'Has checked in' if address in y_set else 'May have checked in'
+	#checked = 'Never checked in' if address in never_checked_in_IPs else 'Has checked in' if address in y_set else 'May have checked in'
 	values = list(row.values())
 	initial_type = [' / '.join(values[6:8]) if values[6] and values[7] else ''.join(values[6:8]) ]
 	contact = [' / '.join(values[8:10]) if values[8] != values[9] else values[8]]
 	date = [values[10][:11]]
 	building = [] if len(buildings) == 1 else [values[4]]
-	triage[level] += [values[1:4] + building + values[5:6] + initial_type + contact + date + values[11:-4] + [up, checked, nmap_cache.get(row['Address'],'')] ]
+	mac_six = values[3][:6].upper()
+	mac_company = [e['Organization Name'] for e in mac_companies if e['Assignment'] == mac_six]
+	mac_company = mac_company[0] if len(mac_company) == 1 else ''
+	device_description = nmap_cache.get(row['Address'],'')
+	print (device_description)
+	description = ' / '.join([mac_company, device_description]) if mac_company and device_description else ''.join([mac_company, device_description])
+	triage[level] += [values[1:4] + building + values[5:6] + initial_type + contact + date + values[11:-4] + [up, description] ]
+
+# for row in current_file_data:
+# 	address = row['Address']
+# 	pingable = 0 if address in pingable_IPs else 3
+# 	if address in never_checked_in_IPs:
+# 		add_row_to_list(row, 0 + pingable)
+# 	elif address not in y_set:
+# 		#pass
+# 		add_row_to_list(row, 1 + pingable)
+# 	else:
+# 		#pass
+# 		add_row_to_list(row, 2 + pingable)
 
 for row in current_file_data:
 	address = row['Address']
-	pingable = 0 if address in pingable_IPs else 3
-	if address in never_checked_in_IPs:
-		add_row_to_list(row, 0 + pingable)
-	elif address not in y_set:
-		#pass
-		add_row_to_list(row, 1 + pingable)
+	pingable = address in pingable_IPs
+	if pingable and address in never_checked_in_IPs:
+		add_row_to_list(row, 0)
+	elif not pingable and address in never_checked_in_IPs:
+		add_row_to_list(row, 1)
 	else:
-		#pass
-		add_row_to_list(row, 2 + pingable)
+		add_row_to_list(row, 2)
+
 
 for level in triage:
 	level.sort(key=lambda row: row[1])
@@ -220,6 +244,8 @@ for row in rows:
 			if row[0] not in n_dictionary[file_name]:
 				missing.append(file_name)
 		final += [['^' * 9, '^' * 9, '\'N\'-line absent: {}'.format(' | '.join([date[3:13] for date in missing]))]]
+	if row and row[0] in y_dict.keys():
+		final += [['^' * 9, '^' * 9, '\'Y\'-line present: {}'.format(' | '.join(y_dict[row[0]]))]]
 
 writer = csv.writer(open(output_filename, 'w'), quoting=csv.QUOTE_ALL)
 writer.writerows(final)
