@@ -17,17 +17,18 @@ import time
 if os.geteuid() != 0:
 	exit("You need to have root privileges to run this script.\nPlease try again, this time using 'sudo'. Exiting.")
 
+subnet = sys.argv[1]
 pp = pprint.PrettyPrinter(indent=4)
 nmap_cache_filename = 'nmap_cache.json'
-ip_regex = re.compile('\d{1,3}\.' + sys.argv[1] + '\.\d{1,3}\.\d{1,3}')
-subnet_regex = re.compile('18.' + sys.argv[1])
+ip_regex = re.compile('\d{1,3}\.' + subnet + '\.\d{1,3}\.\d{1,3}')
+subnet_regex = re.compile('18.' + subnet)
 file_names = sorted((glob("../*-active_IPs.csv")))
 y_set = set()
 y_dict = {}
 n_dictionary = {}
 n_files = {}
 y_files = []
-output_filename = 'active_IPs-{}.csv'.format(sys.argv[1])
+output_filename = 'active_IPs-{}.csv'.format(subnet)
 #triage = [[], [], [], [], [], []]
 triage = [[], [], []]
 
@@ -37,7 +38,7 @@ def get_reader(file_name):
 	# Remove null bytes for corruption in some files e.g. 2018-08-08
 	file = (x.replace('\0','') for x in open(file_name))
 	# Skip until table for specified subnet
-	any (e.startswith('18.' + sys.argv[1]) for e in file)
+	any (e.startswith('18.' + subnet) for e in file)
 	reader = csv.DictReader(file)
 	# Create list of relevant dicts
 	dict_list = [row for row in reader if 
@@ -45,7 +46,7 @@ def get_reader(file_name):
 		row['Vendor'] != 'CABLETRON' and
 		not row['Hostname'].startswith('CD-') and
 		not row['Contact'] == 'cdrennan@MIT.EDU' and
-		not row['Location'] == '68-171' and
+		#not row['Location'] == '68-171' and
 		not row['Location'].startswith('68-588') and
 		not row['Hostname'].startswith('AV-')]
 	return dict_list
@@ -181,7 +182,7 @@ if True:
 		pdf.set_y(pdf.get_y() + 3)
 		pdf.image(name, w=195)
 
-	pdf.output("pages.pdf", "F")
+	pdf.output("pages-{}.pdf".format(subnet), "F")
 
 buildings = set([row['Network'] for row in current_file_data]) - set([''])
 
@@ -190,7 +191,6 @@ with open('oui.csv') as mac_company_csv:
 
 def add_row_to_list (row, level):
 	up = 'Down' if address not in pingable_IPs else 'Up'
-	#checked = 'Never checked in' if address in never_checked_in_IPs else 'Has checked in' if address in y_set else 'May have checked in'
 	values = list(row.values())
 	initial_type = [' / '.join(values[6:8]) if values[6] and values[7] else ''.join(values[6:8]) ]
 	contact = [' / '.join(values[8:10]) if values[8] != values[9] else values[8]]
@@ -204,18 +204,6 @@ def add_row_to_list (row, level):
 	description = ' / '.join([mac_company, device_description]) if mac_company and device_description else ''.join([mac_company, device_description])
 	triage[level] += [values[1:4] + building + values[5:6] + initial_type + contact + date + values[11:-4] + [up, description] ]
 
-# for row in current_file_data:
-# 	address = row['Address']
-# 	pingable = 0 if address in pingable_IPs else 3
-# 	if address in never_checked_in_IPs:
-# 		add_row_to_list(row, 0 + pingable)
-# 	elif address not in y_set:
-# 		#pass
-# 		add_row_to_list(row, 1 + pingable)
-# 	else:
-# 		#pass
-# 		add_row_to_list(row, 2 + pingable)
-
 for row in current_file_data:
 	address = row['Address']
 	pingable = address in pingable_IPs
@@ -225,7 +213,6 @@ for row in current_file_data:
 		add_row_to_list(row, 1)
 	else:
 		add_row_to_list(row, 2)
-
 
 for level in triage:
 	level.sort(key=lambda row: row[1])
