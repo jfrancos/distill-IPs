@@ -46,7 +46,7 @@ def get_reader(file_name):
 		row['Vendor'] != 'CABLETRON' and
 		not row['Hostname'].startswith('CD-') and
 		not row['Contact'] == 'cdrennan@MIT.EDU' and
-		#not row['Location'] == '68-171' and
+		not row['Location'] == '68-171' and
 		not row['Location'].startswith('68-588') and
 		not row['Hostname'].startswith('AV-')]
 	return dict_list
@@ -115,11 +115,12 @@ def callback(host, scan_result):
 	scan = scan_result.get('scan')
 	host_info = scan.get(host)
 	print (host_info)
-	match = host_info.get('osmatch')
-	if match:
-		nmap_cache[host] = match[0]['name']
-		with open (nmap_cache_filename, 'w') as nmap_cache_file:
-			json.dump(dict(nmap_cache), nmap_cache_file)
+	if host_info:
+		match = host_info.get('osmatch')
+		if match:
+			nmap_cache[host] = match[0]['name']
+			with open (nmap_cache_filename, 'w') as nmap_cache_file:
+				json.dump(dict(nmap_cache), nmap_cache_file)
 try:
 	with open (nmap_cache_filename) as nmap_cache_file:
 		nmap_cache = multiprocessing.Manager().dict(json.loads(nmap_cache_file.read()))
@@ -129,9 +130,10 @@ except (IOError, ValueError) as e:
 print ("nmap_cache has {} entries".format(len(nmap_cache)))
 
 if True:
+	print ("scanning hosts:")
 	hosts_to_scan = pingable_IPs - set(nmap_cache.keys())
-	print (' '.join(pingable_IPs - set(nmap_cache.keys())))
-	nm2.scan(hosts=' '.join(pingable_IPs - set(nmap_cache.keys())), arguments='-O -n', callback=callback)
+	print (' '.join(hosts_to_scan))
+	nm2.scan(hosts=' '.join(hosts_to_scan), arguments='-O -n --host-timeout 60', callback=callback)
 
 	while nm2.still_scanning():
 		print('.', end='', flush=True)
@@ -196,6 +198,7 @@ def add_row_to_list (row, level):
 	contact = [' / '.join(values[8:10]) if values[8] != values[9] else values[8]]
 	date = [values[10][:11]]
 	building = [] if len(buildings) == 1 else [values[4]]
+	print (building)
 	mac_six = values[3][:6].upper()
 	mac_company = [e['Organization Name'] for e in mac_companies if e['Assignment'] == mac_six]
 	mac_company = mac_company[0] if len(mac_company) == 1 else ''
